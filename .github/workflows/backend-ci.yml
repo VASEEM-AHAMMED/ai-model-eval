@@ -1,28 +1,44 @@
-name: Backend CI/CD
+name: Backend CI
 
 on:
   push:
     branches:
-      - main
+      - dev
+  pull_request:
+    branches:
       - dev
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1  # Change this to your AWS region
+          python-version: '3.10'
 
-      - name: Deploy Backend
+      - name: Install Dependencies
         run: |
-          echo "Deploying to AWS..."
-          # Add deployment commands here, for example:
-          # aws s3 sync ./backend s3://your-bucket-name
+          cd backend
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Linting
+        run: |
+          cd backend
+          source venv/bin/activate
+          pip install flake8
+          flake8 app
+
+      - name: Run Tests
+        run: |
+          cd backend
+          source venv/bin/activate
+          pytest
+

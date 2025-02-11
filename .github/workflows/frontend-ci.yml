@@ -13,10 +13,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check if Frontend Exists
-        run: |
-          mkdir -p frontend
-          
       - name: Checkout code
         uses: actions/checkout@v3
 

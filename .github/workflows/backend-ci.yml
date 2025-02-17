@@ -31,9 +31,11 @@ jobs:
         run: |
           cd backend
           pip install flake8
-          flake8 app || true  # Ensure linting doesn't fail CI
+          flake8 app || true  
 
       - name: Run Tests
         run: |
           cd backend
-          pytest --maxfail=3 --disable-warnings --tb=short
+          source venv/bin/activate
+          export PYTHONPATH=$(pwd)  
+          pytest

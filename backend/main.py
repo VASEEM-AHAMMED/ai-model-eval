@@ -1,13 +1,17 @@
 # main.py
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from database import database  # Import the async database connection object
 from databases import Database
 from sqlalchemy import MetaData
 import asyncpg  # For PostgreSQL support
 import os
+from pathlib import Path
 
 app = FastAPI()
+
+MODEL_STORAGE_DIR = Path("models")
+MODEL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Connect to the database on startup
 @app.on_event("startup")
@@ -40,3 +44,11 @@ async def test_db_connection():
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to the AI Model Evaluation Platform!"}
+
+# Model Upload API
+@app.post("/upload-model/")
+async def upload_model(file: UploadFile = File(...)):
+    file_location = MODEL_STORAGE_DIR / file.filename
+    with open(file_location, "wb") as buffer:
+        buffer.write(await file.read())
+    return {"filename": file.filename, "message": "Model uploaded successfully!"}

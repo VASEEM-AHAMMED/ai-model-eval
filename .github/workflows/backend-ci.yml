@@ -24,12 +24,11 @@ jobs:
     - name: Create virtual environment
       run: |
         python -m venv backend/venv  # This creates the virtual environment inside the 'backend' folder
-        source backend/venv/bin/activate  # Activating the virtual environment in 'backend'
 
     - name: Install dependencies
       run: |
         source backend/venv/bin/activate  # Activating the virtual environment in 'backend'
-        pip install -r backend/requirements.txt  # Make sure the correct path to requirements.txt is provided
+        pip install -r requirements.txt  # Installing dependencies from the root requirements.txt
 
     - name: Run tests
       run: |

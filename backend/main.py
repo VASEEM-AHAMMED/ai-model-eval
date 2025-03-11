@@ -1,7 +1,7 @@
 # main.py
 
 from fastapi import FastAPI, File, UploadFile
-from database import database  # Import the async database connection object
+from backend.database import database  # Import the async database connection object
 from databases import Database
 from sqlalchemy import MetaData
 import asyncpg  # For PostgreSQL support

@@ -27,6 +27,8 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, clas
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        print("Database tables created!")
+
 
 # Function to start the app and create tables
 async def start_app():

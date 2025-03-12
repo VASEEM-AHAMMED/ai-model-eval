@@ -9,9 +9,12 @@ import shutil
 import uuid
 from sqlalchemy.orm import Session
 from backend.database import get_db 
+from backend.database import create_tables
+from sqlalchemy import text
 
 # Load environment variables from .env
 load_dotenv()
+
 
 app = FastAPI()
 
@@ -20,14 +23,34 @@ MODEL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 app.include_router(evaluation_router, prefix="/evaluation", tags=["evaluation"])
 
 # Connect to the database on startup
+
 @app.on_event("startup")
 async def startup():
     try:
-        # Database connection logic (with asyncpg or SQLAlchemy)
         DATABASE_URL = f"postgresql+asyncpg://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
-        print("Connected to the database.")
+        print(f"Connecting to the database at {DATABASE_URL}")
+        
+        # Get the DB session asynchronously
+        async with SessionLocal() as db:
+            # Test database connection
+            query = text("SELECT 1;")  # Wrap query in text()
+            result = await db.execute(query)  # Use await for async execution
+            row = result.fetchone()  # Fetch result
+            if row:
+                print("Database is reachable.")
+            else:
+                print("Database did not respond as expected.")
+        
+        # Ensure tables are created
+        await create_tables()
+        print("Tables created successfully.")
+        
     except Exception as e:
-        print(f"Error connecting to the database: {e}")
+        print(f"Error during startup: {e}")
+
+
+
+
 
 # Disconnect from the database on shutdown
 @app.on_event("shutdown")
@@ -67,10 +90,11 @@ async def upload_model(file: UploadFile = File(...), db: Session = Depends(get_d
         # Save model details to the database asynchronously
         model_metadata = ModelMetadata(name=file.filename, accuracy=None, loss=None)
         db.add(model_metadata)
-        db.commit()
-        db.refresh(model_metadata)  # Retrieve the inserted row with the ID
+        await db.commit()  # Await the commit
+        await db.refresh(model_metadata)  # Await the refresh
         
         return {"filename": file.filename, "model_id": model_metadata.id, "message": "Model uploaded successfully!"}
     except Exception as e:
         return {"message": f"Error occurred: {str(e)}"}
+
 

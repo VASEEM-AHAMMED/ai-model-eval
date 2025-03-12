@@ -1,12 +1,8 @@
-import os
-import asyncio
-from databases import Database
-from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession
 from backend.models import Base
+import os
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
@@ -20,22 +16,29 @@ db_password = os.getenv('DB_PASSWORD')
 
 # Construct the DATABASE_URL from these credentials
 DATABASE_URL = f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-# Create the database object for async interaction
-database = Database(DATABASE_URL)
 
-# Create async engine and session for the models
+# Create async engine
 engine = create_async_engine(DATABASE_URL, echo=True)
+
+# Create sessionmaker for async session handling
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 
-# Async function to create tables
+# Function to create tables
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-# This will run the table creation in the background when the app starts
+# Function to start the app and create tables
 async def start_app():
     await create_tables()
 
-# This function can be called from your FastAPI app initialization (in main.py)
-loop = asyncio.get_event_loop()
-loop.create_task(start_app())
+from backend.database import SessionLocal
+
+# Helper function to get the database session
+async def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile
 from backend.database import database  # Import async database connection object
 from databases import Database
+from backend.evaluation import router as evaluation_router
 import asyncpg  # For PostgreSQL support
 import os
 from pathlib import Path
@@ -13,6 +14,8 @@ app = FastAPI()
 
 MODEL_STORAGE_DIR = Path("models")
 MODEL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+app.include_router(evaluation_router, prefix="/evaluation", tags=["evaluation"])
+
 
 # Connect to the database on startup
 @app.on_event("startup")

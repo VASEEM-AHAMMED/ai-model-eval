@@ -1,12 +1,13 @@
-# main.py
-
 from fastapi import FastAPI, File, UploadFile
-from backend.database import database  # Import the async database connection object
+from backend.database import database  # Import async database connection object
 from databases import Database
-from sqlalchemy import MetaData
 import asyncpg  # For PostgreSQL support
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 app = FastAPI()
 
@@ -17,6 +18,8 @@ MODEL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 @app.on_event("startup")
 async def startup():
     try:
+        DATABASE_URL = f"postgresql+asyncpg://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+        database = Database(DATABASE_URL)  # Pass DATABASE_URL to the database connection
         await database.connect()  # Connect to the PostgreSQL database asynchronously
         print("Connected to the database.")
     except Exception as e:

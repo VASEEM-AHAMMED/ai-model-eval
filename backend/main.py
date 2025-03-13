@@ -15,6 +15,12 @@ from sqlalchemy import text
 # Load environment variables from .env
 load_dotenv()
 
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
 
 app = FastAPI()
 
@@ -27,9 +33,7 @@ app.include_router(evaluation_router, prefix="/evaluation", tags=["evaluation"])
 @app.on_event("startup")
 async def startup():
     try:
-        DATABASE_URL = f"postgresql+asyncpg://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
-        print(f"Connecting to the database at {DATABASE_URL}")
-        
+        DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD.replace('@', '%40')}@{DB_HOST}:{DB_PORT}/{DB_NAME}"   
         # Get the DB session asynchronously
         async with SessionLocal() as db:
             # Test database connection

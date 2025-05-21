@@ -1,4 +1,6 @@
-from fastapi import FastAPI, File, UploadFile, Depends
+from fastapi import FastAPI, File, UploadFile, Depends, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional, Dict, Any
 from backend.database import SessionLocal  # Import async database connection object and SessionLocal
 from backend.evaluation import router as evaluation_router
 import os
@@ -11,6 +13,8 @@ from sqlalchemy.orm import Session
 from backend.database import get_db 
 from backend.database import create_tables
 from sqlalchemy import text
+from dataset_manager import DatasetManager
+from backend.models import Dataset  # Import your dataset model
 
 # Load environment variables from .env
 load_dotenv()
@@ -23,6 +27,15 @@ DB_PASSWORD = os.getenv("DB_PASSWORD")
 
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 MODEL_STORAGE_DIR = Path("models")
 MODEL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -100,5 +113,61 @@ async def upload_model(file: UploadFile = File(...), db: Session = Depends(get_d
         return {"filename": file.filename, "model_id": model_metadata.id, "message": "Model uploaded successfully!"}
     except Exception as e:
         return {"message": f"Error occurred: {str(e)}"}
+
+dataset_manager = DatasetManager()
+
+# Dataset management endpoints
+@app.post("/datasets/")
+async def upload_dataset(
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    description: Optional[str] = Form(None)
+):
+    try:
+        dataset = await dataset_manager.create_dataset(
+            file=file,
+            name=name,
+            description=description
+        )
+        return {"message": "Dataset uploaded successfully", "dataset": dataset}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/datasets/{dataset_id}")
+async def get_dataset(dataset_id: int):
+    dataset = await dataset_manager.get_dataset(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return dataset
+
+@app.post("/datasets/{dataset_id}/metrics")
+async def save_dataset_metrics(
+    dataset_id: int,
+    model_name: str,
+    metrics: Dict[str, Any]
+):
+    try:
+        metrics = await dataset_manager.save_metrics(
+            dataset_id=dataset_id,
+            model_name=model_name,
+            metrics=metrics
+        )
+        return {"message": "Metrics saved successfully", "metrics": metrics}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/datasets/{dataset_id}/metrics")
+async def get_dataset_metrics(dataset_id: int):
+    metrics = await dataset_manager.get_dataset_metrics(dataset_id)
+    return metrics
+
+@app.get("/datasets/")
+async def list_datasets():
+    db = SessionLocal()
+    try:
+        datasets = db.query(Dataset).all()
+        return datasets
+    finally:
+        db.close()
 
 

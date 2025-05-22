@@ -44,7 +44,7 @@ function DatasetUpload({ onUploadSuccess }: DatasetUploadProps) {
     formData.append('file', file);
     
     try {
-      await axios.post('http://localhost:8000/datasets/upload/', formData, {
+      await axios.post('http://localhost:8080/datasets/upload/', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }

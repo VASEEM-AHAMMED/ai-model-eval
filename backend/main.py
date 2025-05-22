@@ -137,13 +137,31 @@ async def upload_dataset(
     upload_dir = "uploads"
     os.makedirs(upload_dir, exist_ok=True)
     
+    # Read file content for validation
+    content = await file.read()
+    
+    # For CSV files, attempt auto-fixing and validate
+    if format.lower() == 'csv':
+        # Try to fix common CSV formatting issues
+        fixed_content, was_fixed = exporters.fix_csv_formatting(content)
+        
+        # Validate the (potentially fixed) CSV
+        if not batch.validate_csv_file(fixed_content):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File '{file.filename}' is not a valid CSV file or could not be automatically fixed"
+            )
+        
+        # Use the fixed content if fixes were applied
+        content = fixed_content
+    
     # Generate unique filename
     timestamp = str(int(time.time() * 1000))
     file_path = os.path.join(upload_dir, f"{timestamp}_{file.filename}")
     
-    # Save the file
+    # Save the file (using potentially fixed content)
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(content)
     
     # Create dataset in database
     db_dataset = Dataset(

@@ -8,12 +8,50 @@ import json
 import shutil
 import zipfile
 import tempfile
+import csv
 from typing import List, Dict, Any, Optional, Tuple
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
+from io import StringIO
 
 from db.models import Dataset, DatasetMetrics
+from exporters import fix_csv_formatting
+
+
+def validate_csv_file(file_content: bytes) -> bool:
+    """
+    Validate that a CSV file is properly formatted
+    
+    Args:
+        file_content: Content of the CSV file
+        
+    Returns:
+        True if CSV is valid, False otherwise
+    """
+    try:
+        # Try to decode and parse the CSV
+        content = file_content.decode('utf-8')
+        csv_reader = csv.reader(StringIO(content))
+        
+        # Check if we can read at least the header row
+        header = next(csv_reader)
+        if not header:
+            return False
+            
+        # Try to read at least one data row
+        try:
+            first_row = next(csv_reader)
+            if len(first_row) != len(header):
+                return False
+        except StopIteration:
+            # Empty file (only header) is still valid
+            pass
+            
+        return True
+    except Exception as e:
+        print(f"CSV validation error: {str(e)}")
+        return False
 
 
 async def process_batch_upload(
@@ -47,14 +85,32 @@ async def process_batch_upload(
     
     # Process each file
     for i, file in enumerate(files):
+        # Read file content for validation
+        content = await file.read()
+        
+        # For CSV files, attempt auto-fixing and validate
+        if format.lower() == 'csv':
+            # Try to fix common CSV formatting issues
+            fixed_content, was_fixed = fix_csv_formatting(content)
+            
+            # Validate the (potentially fixed) CSV
+            if not validate_csv_file(fixed_content):
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"File '{file.filename}' is not a valid CSV file or could not be automatically fixed"
+                )
+            
+            # Use the fixed content if fixes were applied
+            content = fixed_content
+        
         # Generate unique filename with timestamp
         import time
         timestamp = str(int(time.time() * 1000) + i)
         file_path = os.path.join(upload_dir, f"{timestamp}_{file.filename}")
         
-        # Save the file
+        # Save the file (using potentially fixed content)
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(content)
         
         # Create dataset in database
         dataset_name = f"{name_prefix}_{i+1}" if len(files) > 1 else name_prefix

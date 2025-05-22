@@ -7,7 +7,7 @@ import os
 import json
 import csv
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from fastapi.responses import FileResponse, StreamingResponse
 from io import StringIO
 
@@ -20,6 +20,49 @@ try:
     pandas_available = True
 except ImportError:
     pass
+
+
+def fix_csv_formatting(content: bytes) -> Tuple[bytes, bool]:
+    """
+    Attempt to fix common CSV formatting issues
+    
+    Args:
+        content: Raw CSV file content
+        
+    Returns:
+        Tuple of (fixed content, whether changes were made)
+    """
+    try:
+        # Decode content
+        decoded = content.decode('utf-8', errors='replace')
+        
+        # Check for and fix common issues
+        fixed = decoded
+        
+        # Replace inconsistent line endings
+        original_lines = fixed.splitlines()
+        fixed = '\n'.join(original_lines)
+        
+        # Fix missing quotes around fields with commas
+        if pandas_available:
+            try:
+                # Try to use pandas for more robust CSV parsing and fixing
+                buffer = StringIO(fixed)
+                df = pd.read_csv(buffer, engine='python', error_bad_lines=False)
+                output = StringIO()
+                df.to_csv(output, index=False)
+                fixed = output.getvalue()
+            except Exception:
+                # If pandas fails, continue with the basic fixes
+                pass
+        
+        # Check if we made any changes
+        changes_made = fixed != decoded
+        
+        return fixed.encode('utf-8'), changes_made
+    except Exception:
+        # If anything fails, return the original content
+        return content, False
 
 
 def export_dataset_to_json(dataset: Dataset, metrics: List[DatasetMetrics]) -> str:

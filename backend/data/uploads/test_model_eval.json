@@ -1,0 +1,79 @@
+{
+  "model_name": "gpt-test-model",
+  "model_version": "1.0",
+  "dataset_name": "test_evaluation_set",
+  "metrics": {
+    "accuracy": 0.87,
+    "precision": 0.82,
+    "recall": 0.89,
+    "f1_score": 0.85
+  },
+  "latency": [120, 115, 125, 118, 122, 130, 119, 121, 117, 124],
+  "timestamps": ["2023-12-01T10:00:00", "2023-12-01T10:05:00", "2023-12-01T10:10:00", "2023-12-01T10:15:00", "2023-12-01T10:20:00", "2023-12-01T10:25:00", "2023-12-01T10:30:00", "2023-12-01T10:35:00", "2023-12-01T10:40:00", "2023-12-01T10:45:00"],
+  "distribution": {
+    "categories": ["Class A", "Class B", "Class C", "Class D", "Class E"],
+    "counts": [45, 32, 28, 18, 27]
+  },
+  "evaluation_examples": [
+    {
+      "input": "What is the capital of France?",
+      "expected_output": "Paris",
+      "actual_output": "Paris",
+      "correct": true
+    },
+    {
+      "input": "Who wrote Romeo and Juliet?",
+      "expected_output": "William Shakespeare",
+      "actual_output": "William Shakespeare",
+      "correct": true
+    },
+    {
+      "input": "What is the boiling point of water in Celsius?",
+      "expected_output": "100 degrees",
+      "actual_output": "100°C",
+      "correct": true
+    },
+    {
+      "input": "Who was the 44th president of the United States?",
+      "expected_output": "Barack Obama",
+      "actual_output": "Barack Obama",
+      "correct": true
+    },
+    {
+      "input": "What is the square root of 144?",
+      "expected_output": "12",
+      "actual_output": "12",
+      "correct": true
+    },
+    {
+      "input": "What is the chemical symbol for gold?",
+      "expected_output": "Au",
+      "actual_output": "Au",
+      "correct": true
+    },
+    {
+      "input": "Which planet is known as the Red Planet?",
+      "expected_output": "Mars",
+      "actual_output": "Mars",
+      "correct": true
+    },
+    {
+      "input": "What is the capital of Japan?",
+      "expected_output": "Tokyo",
+      "actual_output": "Tokyo",
+      "correct": true
+    },
+    {
+      "input": "What year did World War II end?",
+      "expected_output": "1945",
+      "actual_output": "1945",
+      "correct": true
+    },
+    {
+      "input": "Who painted the Mona Lisa?",
+      "expected_output": "Leonardo da Vinci",
+      "actual_output": "Leonardo da Vinci",
+      "correct": true
+    }
+  ]
+} 

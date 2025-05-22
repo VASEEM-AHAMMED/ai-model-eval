@@ -140,19 +140,21 @@ async def upload_dataset(
     # Read file content for validation
     content = await file.read()
     
-    # For CSV files, attempt auto-fixing and validate
+    # For CSV files, attempt auto-fixing and validate with detailed diagnostics
     if format.lower() == 'csv':
-        # Try to fix common CSV formatting issues
-        fixed_content, was_fixed = exporters.fix_csv_formatting(content)
+        # Try to fix common CSV formatting issues with detailed diagnostics
+        fixed_content, was_fixed, diagnostic = exporters.fix_csv_formatting(content, return_diagnostic=True)
         
-        # Validate the (potentially fixed) CSV
-        if not batch.validate_csv_file(fixed_content):
+        # If we have unfixable issues, return detailed error message
+        if diagnostic["has_issues"] and not diagnostic["fixable"]:
+            error_msg = f"File '{file.filename}' has CSV issues that couldn't be fixed: "
+            error_msg += ", ".join(diagnostic["diagnostic"])
             raise HTTPException(
                 status_code=400, 
-                detail=f"File '{file.filename}' is not a valid CSV file or could not be automatically fixed"
+                detail=error_msg
             )
         
-        # Use the fixed content if fixes were applied
+        # If we found and fixed issues, use the fixed content
         content = fixed_content
     
     # Generate unique filename
@@ -436,5 +438,38 @@ def get_models_over_time(db: Session = Depends(get_db)):
 def get_metrics_summary(dataset_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Get summary statistics for all metrics or filtered by dataset"""
     return search.get_metrics_summary(db, dataset_id)
+
+# CSV validation helper endpoint
+@app.post("/utils/validate-csv")
+async def validate_csv_file(
+    file: UploadFile = File(...),
+):
+    """Test endpoint to validate CSV files and return detailed diagnostics"""
+    content = await file.read()
+    
+    # Check if the file looks like a CSV (basic check)
+    if not file.filename.lower().endswith('.csv'):
+        return {
+            "valid": False,
+            "filename": file.filename,
+            "error": "File does not have a .csv extension"
+        }
+        
+    # Try to fix common CSV formatting issues with detailed diagnostics
+    fixed_content, was_fixed, diagnostic = exporters.fix_csv_formatting(content, return_diagnostic=True)
+    
+    result = {
+        "valid": not diagnostic["has_issues"] or diagnostic["fixable"],
+        "filename": file.filename,
+        "fixable": diagnostic["fixable"],
+        "was_fixed": was_fixed,
+        "detected_encoding": diagnostic["detected_encoding"],
+        "issues_found": diagnostic["has_issues"],
+        "issues": diagnostic["diagnostic"],
+        "content_preview": content[:200].decode(errors='replace') if len(content) > 0 else "",
+        "fixed_preview": fixed_content[:200].decode(errors='replace') if was_fixed and len(fixed_content) > 0 else ""
+    }
+    
+    return result
 
 

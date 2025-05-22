@@ -16,10 +16,10 @@ from datetime import datetime
 from io import StringIO
 
 from db.models import Dataset, DatasetMetrics
-from exporters import fix_csv_formatting
+from exporters import fix_csv_formatting, diagnose_csv_issues
 
 
-def validate_csv_file(file_content: bytes) -> bool:
+def validate_csv_file(file_content: bytes) -> Tuple[bool, List[str]]:
     """
     Validate that a CSV file is properly formatted
     
@@ -27,31 +27,14 @@ def validate_csv_file(file_content: bytes) -> bool:
         file_content: Content of the CSV file
         
     Returns:
-        True if CSV is valid, False otherwise
+        Tuple of (is_valid, list_of_issues)
     """
-    try:
-        # Try to decode and parse the CSV
-        content = file_content.decode('utf-8')
-        csv_reader = csv.reader(StringIO(content))
-        
-        # Check if we can read at least the header row
-        header = next(csv_reader)
-        if not header:
-            return False
-            
-        # Try to read at least one data row
-        try:
-            first_row = next(csv_reader)
-            if len(first_row) != len(header):
-                return False
-        except StopIteration:
-            # Empty file (only header) is still valid
-            pass
-            
-        return True
-    except Exception as e:
-        print(f"CSV validation error: {str(e)}")
-        return False
+    diagnostic = diagnose_csv_issues(file_content)
+    
+    if diagnostic["has_issues"] and not diagnostic["fixable"]:
+        return False, diagnostic["diagnostic"]
+    
+    return not diagnostic["has_issues"], diagnostic["diagnostic"]
 
 
 async def process_batch_upload(
@@ -88,19 +71,21 @@ async def process_batch_upload(
         # Read file content for validation
         content = await file.read()
         
-        # For CSV files, attempt auto-fixing and validate
+        # For CSV files, attempt auto-fixing and validate with detailed diagnostics
         if format.lower() == 'csv':
-            # Try to fix common CSV formatting issues
-            fixed_content, was_fixed = fix_csv_formatting(content)
+            # Try to fix common CSV formatting issues with detailed diagnostics
+            fixed_content, was_fixed, diagnostic = fix_csv_formatting(content, return_diagnostic=True)
             
-            # Validate the (potentially fixed) CSV
-            if not validate_csv_file(fixed_content):
+            # If we have unfixable issues, return detailed error message
+            if diagnostic["has_issues"] and not diagnostic["fixable"]:
+                error_msg = f"File '{file.filename}' has CSV issues that couldn't be fixed: "
+                error_msg += ", ".join(diagnostic["diagnostic"])
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"File '{file.filename}' is not a valid CSV file or could not be automatically fixed"
+                    detail=error_msg
                 )
             
-            # Use the fixed content if fixes were applied
+            # If we found and fixed issues, use the fixed content
             content = fixed_content
         
         # Generate unique filename with timestamp
@@ -159,8 +144,9 @@ async def process_zip_upload(
     with tempfile.TemporaryDirectory() as tmp_dir:
         # Save zip file temporarily
         tmp_zip_path = os.path.join(tmp_dir, zip_file.filename)
+        zip_content = await zip_file.read()
         with open(tmp_zip_path, "wb") as buffer:
-            shutil.copyfileobj(zip_file.file, buffer)
+            buffer.write(zip_content)
         
         # Extract zip file
         with zipfile.ZipFile(tmp_zip_path, 'r') as zip_ref:
@@ -172,10 +158,35 @@ async def process_zip_upload(
                           if os.path.isfile(os.path.join(tmp_dir, f)) and f != zip_file.filename]
         
         for i, filename in enumerate(extracted_files):
+            source_path = os.path.join(tmp_dir, filename)
+            
+            # Read file content for validation and potential fixing
+            with open(source_path, "rb") as f:
+                content = f.read()
+            
+            # For CSV files, attempt auto-fixing and validate
+            if format.lower() == 'csv':
+                # Try to fix common CSV formatting issues with detailed diagnostics
+                fixed_content, was_fixed, diagnostic = fix_csv_formatting(content, return_diagnostic=True)
+                
+                # If we have unfixable issues, return detailed error message
+                if diagnostic["has_issues"] and not diagnostic["fixable"]:
+                    error_msg = f"File '{filename}' has CSV issues that couldn't be fixed: "
+                    error_msg += ", ".join(diagnostic["diagnostic"])
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=error_msg
+                    )
+                
+                # If we found and fixed issues, use the fixed content
+                if was_fixed:
+                    # Write the fixed content back to the temp file
+                    with open(source_path, "wb") as f:
+                        f.write(fixed_content)
+            
             # Generate unique filename with timestamp
             import time
             timestamp = str(int(time.time() * 1000) + i)
-            source_path = os.path.join(tmp_dir, filename)
             dest_path = os.path.join(upload_dir, f"{timestamp}_{filename}")
             
             # Copy file to uploads directory

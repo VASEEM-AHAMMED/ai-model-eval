@@ -6,10 +6,12 @@ Supports exporting datasets and metrics to various formats.
 import os
 import json
 import csv
+import re
+import traceback
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from fastapi.responses import FileResponse, StreamingResponse
-from io import StringIO
+from io import StringIO, BytesIO
 
 from db.models import Dataset, DatasetMetrics
 
@@ -22,46 +24,181 @@ except ImportError:
     pass
 
 
-def fix_csv_formatting(content: bytes) -> Tuple[bytes, bool]:
+def diagnose_csv_issues(content: bytes) -> Dict[str, Any]:
     """
-    Attempt to fix common CSV formatting issues
+    Perform detailed diagnosis of CSV formatting issues
     
     Args:
         content: Raw CSV file content
         
     Returns:
-        Tuple of (fixed content, whether changes were made)
+        Dictionary with diagnostic information
     """
+    issues = {
+        "has_issues": False,
+        "diagnostic": [],
+        "fixable": True,
+        "detected_encoding": "utf-8",
+        "line_ending_issues": False,
+        "quoting_issues": False,
+        "column_count_mismatch": False,
+        "empty_file": False,
+        "invalid_characters": False
+    }
+    
+    # Check if file is empty
+    if not content or len(content) == 0:
+        issues["has_issues"] = True
+        issues["diagnostic"].append("File is empty")
+        issues["empty_file"] = True
+        issues["fixable"] = False
+        return issues
+    
+    # Try to detect encoding
+    encodings = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+    content_decoded = None
+    
+    for encoding in encodings:
+        try:
+            content_decoded = content.decode(encoding)
+            issues["detected_encoding"] = encoding
+            break
+        except UnicodeDecodeError:
+            continue
+    
+    if not content_decoded:
+        issues["has_issues"] = True
+        issues["diagnostic"].append("Unable to determine file encoding")
+        issues["fixable"] = False
+        return issues
+    
+    # Check line endings
+    if "\r\n" in content_decoded and "\n" in content_decoded.replace("\r\n", ""):
+        issues["has_issues"] = True
+        issues["diagnostic"].append("Mixed line endings (\\r\\n and \\n)")
+        issues["line_ending_issues"] = True
+    
+    # Check for invalid characters
+    if re.search(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', content_decoded):
+        issues["has_issues"] = True
+        issues["diagnostic"].append("Contains invalid control characters")
+        issues["invalid_characters"] = True
+    
     try:
-        # Decode content
-        decoded = content.decode('utf-8', errors='replace')
+        # Parse the CSV to look for more issues
+        rows = list(csv.reader(StringIO(content_decoded)))
         
-        # Check for and fix common issues
-        fixed = decoded
+        if len(rows) == 0:
+            issues["has_issues"] = True
+            issues["diagnostic"].append("No CSV rows detected")
+            issues["empty_file"] = True
+            return issues
         
-        # Replace inconsistent line endings
-        original_lines = fixed.splitlines()
+        # Check column counts
+        first_row_cols = len(rows[0])
+        for i, row in enumerate(rows[1:], 2):
+            if len(row) != first_row_cols:
+                issues["has_issues"] = True
+                issues["diagnostic"].append(f"Row {i} has {len(row)} columns, expected {first_row_cols}")
+                issues["column_count_mismatch"] = True
+                break
+        
+        # Check for quoting issues by looking for commas in fields
+        for row in rows:
+            for field in row:
+                if ',' in field and not (field.startswith('"') and field.endswith('"')):
+                    issues["has_issues"] = True
+                    issues["diagnostic"].append("Detected unquoted fields containing commas")
+                    issues["quoting_issues"] = True
+                    break
+            if issues["quoting_issues"]:
+                break
+                
+    except Exception as e:
+        issues["has_issues"] = True
+        issues["diagnostic"].append(f"CSV parsing error: {str(e)}")
+        # Some errors might not be fixable
+        if "newline character seen" in str(e) or "line contains NUL" in str(e):
+            issues["fixable"] = False
+    
+    return issues
+
+
+def fix_csv_formatting(content: bytes, return_diagnostic: bool = False) -> Tuple[bytes, bool, Optional[Dict]]:
+    """
+    Attempt to fix common CSV formatting issues
+    
+    Args:
+        content: Raw CSV file content
+        return_diagnostic: Whether to return detailed diagnostic information
+        
+    Returns:
+        Tuple of (fixed content, whether changes were made, diagnostic info if requested)
+    """
+    # Get detailed diagnostic information
+    diagnostic = diagnose_csv_issues(content)
+    
+    # If issues aren't fixable, return original content
+    if diagnostic["has_issues"] and not diagnostic["fixable"]:
+        if return_diagnostic:
+            return content, False, diagnostic
+        return content, False
+    
+    try:
+        # Decode content with appropriate encoding
+        decoded = content.decode(diagnostic["detected_encoding"], errors='replace')
+        
+        # Fix line endings
+        original_lines = decoded.splitlines()
         fixed = '\n'.join(original_lines)
         
-        # Fix missing quotes around fields with commas
-        if pandas_available:
+        # Remove invalid control characters
+        if diagnostic["invalid_characters"]:
+            fixed = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', fixed)
+        
+        # Try advanced fixes with pandas if available
+        if pandas_available and (diagnostic["column_count_mismatch"] or diagnostic["quoting_issues"]):
             try:
-                # Try to use pandas for more robust CSV parsing and fixing
                 buffer = StringIO(fixed)
-                df = pd.read_csv(buffer, engine='python', error_bad_lines=False)
+                # Use more tolerant pandas options
+                df = pd.read_csv(
+                    buffer, 
+                    engine='python',
+                    error_bad_lines=False,
+                    warn_bad_lines=False,
+                    on_bad_lines='skip',
+                    encoding_errors='ignore',
+                    quotechar='"',
+                    escapechar='\\'
+                )
+                
+                # If we got to here, pandas managed to read it - output with correct formatting
                 output = StringIO()
-                df.to_csv(output, index=False)
+                df.to_csv(output, index=False, quoting=csv.QUOTE_NONNUMERIC)
                 fixed = output.getvalue()
-            except Exception:
-                # If pandas fails, continue with the basic fixes
+            except Exception as e:
+                # If pandas fails, continue with the basic fixes we've already applied
+                diagnostic["diagnostic"].append(f"Pandas fix failed: {str(e)}")
                 pass
         
         # Check if we made any changes
         changes_made = fixed != decoded
         
-        return fixed.encode('utf-8'), changes_made
-    except Exception:
-        # If anything fails, return the original content
+        result = fixed.encode('utf-8')
+        
+        if return_diagnostic:
+            return result, changes_made, diagnostic
+        return result, changes_made
+        
+    except Exception as e:
+        tb = traceback.format_exc()
+        diagnostic["has_issues"] = True
+        diagnostic["fixable"] = False
+        diagnostic["diagnostic"].append(f"Exception during fix: {str(e)}")
+        diagnostic["diagnostic"].append(tb)
+        
+        if return_diagnostic:
+            return content, False, diagnostic
         return content, False
 
 

@@ -1,9 +1,9 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, DateTime, JSON, text
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship, Session
+from sqlalchemy.orm import relationship, Session
 from sqlalchemy.sql import func
 from datetime import datetime
 from pydantic import BaseModel
@@ -11,30 +11,9 @@ import json
 import os
 import shutil
 import uuid
-import sys
 
-# Database configuration
-# Get current username - this should work on macOS and Linux
-current_user = os.environ.get("USER", "vaseem")  # Default to 'vaseem' if USER env var not set
-DATABASE_URL = f"postgresql://{current_user}@localhost:5432/ai_model_eval"
-print(f"Connecting to PostgreSQL as user '{current_user}'")
-
-# Create the engine without fallback to SQLite
-engine = create_engine(DATABASE_URL)
-
-# Test the connection to make sure it works
-try:
-    with engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
-    print(f"✅ Connected to PostgreSQL database as user '{current_user}'!")
-except Exception as e:
-    print(f"❌ Error connecting to PostgreSQL: {e}")
-    print("Please ensure PostgreSQL is running and the database exists.")
-    sys.exit(1)
-
-# SQLAlchemy setup
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# Import database components from the db module
+from db.database import engine, get_db, Base, init_db
 
 # Pydantic models
 class DatasetBase(BaseModel):
@@ -111,15 +90,7 @@ class DatasetMetrics(Base):
     dataset = relationship("Dataset", back_populates="metrics")
 
 # Create tables
-Base.metadata.create_all(bind=engine)
-
-# Dependency to get the database session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+init_db()
 
 # Initialize FastAPI app
 app = FastAPI(title="AI Model Evaluation API")

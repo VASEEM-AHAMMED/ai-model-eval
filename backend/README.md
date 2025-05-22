@@ -1,36 +1,73 @@
 # AI Model Evaluation Platform - Backend
 
-This directory contains the backend API for the AI Model Evaluation Platform.
+This is the backend service for the AI Model Evaluation Platform. It provides APIs for uploading datasets, tracking model metrics, and evaluating AI model performance.
 
-## Setup
+## Database Setup
 
-1. Create a virtual environment:
-```bash
-cd backend
-python3 -m venv env
-source env/bin/activate
-```
+The application uses PostgreSQL as the primary database, with an optional fallback to SQLite.
 
-2. Install dependencies:
-```bash
-pip install fastapi uvicorn python-multipart
-```
+### PostgreSQL Setup
 
-## Running the Server
-
-To run the backend server:
+1. Install PostgreSQL on your system if not already installed.
+2. Create a database for the application:
 
 ```bash
-source env/bin/activate
-uvicorn simple_backend:app --reload --port 8080
+createdb ai_model_eval
 ```
 
-The API will be available at http://localhost:8080
+3. The application will automatically use your current system username to connect to PostgreSQL. If you need to use different credentials, create a `.env` file in the backend directory with the following content:
+
+```
+DB_USER=your_username
+DB_PASSWORD=your_password
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=ai_model_eval
+```
+
+### Database Management
+
+You can use the `manage_db.py` script to check your database connection and manage datasets:
+
+```bash
+# Check database connection
+python manage_db.py check
+
+# List all datasets
+python manage_db.py list-datasets
+
+# List metrics for a specific dataset
+python manage_db.py list-metrics --dataset-id 1
+
+# Initialize database schema
+python manage_db.py init
+```
+
+## Running the Application
+
+1. Install the required dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+2. Start the FastAPI server:
+
+```bash
+uvicorn main:app --reload --port 8091 --host 0.0.0.0
+```
+
+3. The API will be available at http://localhost:8091
+
+4. Access the API documentation at http://localhost:8091/docs
 
 ## API Endpoints
 
-- `GET /` - Welcome message
-- `GET /datasets/` - List all datasets
-- `POST /datasets/upload/` - Upload a new dataset
-- `GET /datasets/{dataset_id}` - Get dataset details
-- `GET /datasets/{dataset_id}/metrics/` - Get metrics for a dataset 
+- `GET /datasets/`: List all datasets
+- `POST /datasets/upload/`: Upload a new dataset
+- `GET /datasets/{dataset_id}`: Get a specific dataset
+- `DELETE /datasets/{dataset_id}`: Delete a dataset
+- `POST /datasets/{dataset_id}/metrics/`: Create metrics for a dataset
+- `GET /datasets/{dataset_id}/metrics/`: Get all metrics for a dataset
+- `GET /metrics/{metrics_id}`: Get specific metrics
+- `DELETE /metrics/{metrics_id}`: Delete specific metrics 

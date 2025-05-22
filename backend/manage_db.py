@@ -8,71 +8,143 @@ import sys
 import json
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 # Import database components
-from db.database import engine, get_db, init_db
+from db.database import engine, SessionLocal, init_db
 from db.models import Dataset, DatasetMetrics
 
 def check_connection():
-    """Check database connection and print status"""
+    """Check if the database connection is working"""
     try:
         with engine.connect() as conn:
-            result = conn.execute(text("SELECT 1")).scalar()
-            print(f"✅ Database connection successful! Result: {result}")
-            return True
-    except Exception as e:
-        print(f"❌ Database connection failed: {e}")
+            result = conn.execute(text("SELECT 1")).fetchone()
+            if result and result[0] == 1:
+                print(f"✅ Successfully connected to {engine.url.drivername} database!")
+                return True
+            else:
+                print("❌ Connection test failed!")
+                return False
+    except SQLAlchemyError as e:
+        print(f"❌ Database connection error: {e}")
         return False
 
 def list_datasets():
     """List all datasets in the database"""
-    db = next(get_db())
+    db = SessionLocal()
     try:
         datasets = db.query(Dataset).all()
         if not datasets:
             print("No datasets found.")
             return
-        
+            
         print(f"Found {len(datasets)} datasets:")
-        print("-" * 80)
-        print(f"{'ID':<5} {'Name':<30} {'Format':<10} {'Size':<10} {'Created At':<25}")
-        print("-" * 80)
-        for dataset in datasets:
-            print(f"{dataset.id:<5} {dataset.name:<30} {dataset.format:<10} {dataset.size:<10} {dataset.created_at}")
+        for ds in datasets:
+            print(f"ID: {ds.id} | Name: {ds.name} | Format: {ds.format} | Size: {ds.size or 0} bytes")
+    except SQLAlchemyError as e:
+        print(f"❌ Error listing datasets: {e}")
     finally:
         db.close()
 
 def list_metrics(dataset_id=None):
-    """List metrics for a specific dataset or all metrics"""
-    db = next(get_db())
+    """List metrics, optionally filtered by dataset_id"""
+    db = SessionLocal()
     try:
         query = db.query(DatasetMetrics)
         if dataset_id:
             query = query.filter(DatasetMetrics.dataset_id == dataset_id)
-        
+            
         metrics = query.all()
         if not metrics:
-            print(f"No metrics found{' for dataset ' + str(dataset_id) if dataset_id else ''}.")
+            filter_msg = f" for dataset ID {dataset_id}" if dataset_id else ""
+            print(f"No metrics found{filter_msg}.")
             return
-        
+            
         print(f"Found {len(metrics)} metrics:")
-        print("-" * 100)
-        print(f"{'ID':<5} {'Dataset ID':<10} {'Model':<20} {'Accuracy':<10} {'Precision':<10} {'Recall':<10} {'F1':<10}")
-        print("-" * 100)
-        for metric in metrics:
-            print(f"{metric.id:<5} {metric.dataset_id:<10} {metric.model_name:<20} {metric.accuracy or 'N/A':<10} {metric.precision or 'N/A':<10} {metric.recall or 'N/A':<10} {metric.f1_score or 'N/A':<10}")
+        for m in metrics:
+            print(f"ID: {m.id} | Dataset: {m.dataset_id} | Model: {m.model_name} | " +
+                 f"Accuracy: {m.accuracy or 0:.4f} | F1: {m.f1_score or 0:.4f}")
+    except SQLAlchemyError as e:
+        print(f"❌ Error listing metrics: {e}")
     finally:
         db.close()
 
-def init_database():
-    """Initialize the database schema"""
+def create_sample_data():
+    """Create sample data for testing purposes"""
+    db = SessionLocal()
     try:
-        init_db()
-        print("✅ Database schema created successfully!")
-        return True
-    except Exception as e:
-        print(f"❌ Failed to create database schema: {e}")
-        return False
+        # Check if we already have data
+        if db.query(Dataset).count() > 0:
+            print("Database already contains data. Skipping sample data creation.")
+            return
+            
+        # Create sample datasets
+        sample_datasets = [
+            Dataset(
+                name="Sample Text Classification",
+                description="Sample dataset for text classification",
+                format="json",
+                file_path="samples/text_classification.json",
+                size=1024
+            ),
+            Dataset(
+                name="Sample Image Recognition",
+                description="Sample dataset for image recognition",
+                format="jpg",
+                file_path="samples/image_recognition.zip",
+                size=2048
+            )
+        ]
+        
+        db.add_all(sample_datasets)
+        db.flush()  # Flush to get IDs but don't commit yet
+        
+        # Create sample metrics
+        sample_metrics = [
+            DatasetMetrics(
+                dataset_id=sample_datasets[0].id,
+                model_name="BERT-base",
+                accuracy=0.92,
+                precision=0.89,
+                recall=0.94,
+                f1_score=0.91,
+                latency=[120, 135, 110],
+                timestamps=["2023-01-01T12:00:00", "2023-01-01T12:30:00", "2023-01-01T13:00:00"],
+                distribution={"class1": 0.3, "class2": 0.7}
+            ),
+            DatasetMetrics(
+                dataset_id=sample_datasets[0].id,
+                model_name="RoBERTa",
+                accuracy=0.94,
+                precision=0.91,
+                recall=0.95,
+                f1_score=0.93,
+                latency=[100, 105, 95],
+                timestamps=["2023-01-01T14:00:00", "2023-01-01T14:30:00", "2023-01-01T15:00:00"],
+                distribution={"class1": 0.35, "class2": 0.65}
+            ),
+            DatasetMetrics(
+                dataset_id=sample_datasets[1].id,
+                model_name="ResNet50",
+                accuracy=0.88,
+                precision=0.86,
+                recall=0.89,
+                f1_score=0.87,
+                latency=[200, 210, 195],
+                timestamps=["2023-01-02T12:00:00", "2023-01-02T12:30:00", "2023-01-02T13:00:00"],
+                distribution={"cat": 0.4, "dog": 0.6}
+            )
+        ]
+        
+        db.add_all(sample_metrics)
+        db.commit()
+        print("✅ Sample data created successfully.")
+        
+    except SQLAlchemyError as e:
+        db.rollback()
+        print(f"❌ Error creating sample data: {e}")
+    finally:
+        db.close()
 
 def main():
     """Main function to parse arguments and execute commands"""
@@ -92,6 +164,9 @@ def main():
     # Initialize database command
     subparsers.add_parser('init', help='Initialize database schema')
     
+    # Create sample data command
+    sample_parser = subparsers.add_parser('create-samples', help='Create sample data')
+    
     args = parser.parse_args()
     
     if args.command == 'check':
@@ -101,7 +176,10 @@ def main():
     elif args.command == 'list-metrics':
         list_metrics(args.dataset_id)
     elif args.command == 'init':
-        init_database()
+        init_db()
+        print("✅ Database schema initialized.")
+    elif args.command == 'create-samples':
+        create_sample_data()
     else:
         parser.print_help()
 
